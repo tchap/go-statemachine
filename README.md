@@ -4,6 +4,11 @@
 
 A small framework for using state machine approach for event processing.
 
+## State of the Project
+
+I am still developing this, so things may and will change if I find it more
+appropriate for my use cases.
+
 ## Example
 
 Check `ExampleStateMachine` in `statemachine_test.go` to see an example.
