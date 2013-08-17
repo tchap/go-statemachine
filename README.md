@@ -8,6 +8,10 @@ A small framework for using state machine approach for event processing.
 
 Check `ExampleStateMachine` in `statemachine_test.go` to see an example.
 
+## Documentation
+
+We are writing Go, so [GoDoc](http://godoc.org/github.com/tchap/go-statemachine), what were you expecting?
+
 ## License
 
 MIT
