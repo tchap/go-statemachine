@@ -136,7 +136,7 @@ type cmdIsHandlerDefinedArgs struct {
 
 // Check if a handler is defined for this state and event.
 // It is non-blocking as long as the internal channel is not full.
-func (sm *StateMachine) IsHandlerDefined(s State, t EventType) (defined bool, err error) {
+func (sm *StateMachine) IsHandlerDefined(t EventType, s State) (defined bool, err error) {
 	replyCh := make(chan bool, 1)
 	err = sm.send(&command{
 		cmdIsHandlerDefined,
@@ -158,7 +158,7 @@ type cmdOffArgs struct {
 
 // Drop a handler assigned to the state and event.
 // It is non-blocking as long as the internal channel is not full.
-func (sm *StateMachine) Off(s State, t EventType) error {
+func (sm *StateMachine) Off(t EventType, s State) error {
 	return sm.send(&command{
 		cmdOff,
 		&cmdOffArgs{s, t},
