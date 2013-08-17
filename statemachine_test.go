@@ -57,7 +57,7 @@ func cmdToString(t EventType) string {
 // Tests ----------------------------------------------------------------------
 
 func TestErrIllegalEvent(test *testing.T) {
-	sm := NewStateMachine(stateStopped, nil, 3, 3, 0)
+	sm := New(stateStopped, nil, 3, 3, 0)
 	defer sm.Terminate()
 
 	errCh := make(chan error, 1)
@@ -68,7 +68,7 @@ func TestErrIllegalEvent(test *testing.T) {
 }
 
 func TestErrTerminated(test *testing.T) {
-	sm := NewStateMachine(stateStopped, nil, 3, 3, 0)
+	sm := New(stateStopped, nil, 3, 3, 0)
 	err := sm.Terminate()
 	if err != nil {
 		test.Fatal(err)
@@ -81,7 +81,7 @@ func TestErrTerminated(test *testing.T) {
 // Benchmarks -----------------------------------------------------------------
 
 func BenchmarkStateMachine(bm *testing.B) {
-	sm := NewStateMachine(stateStopped, nil, 3, 3, 0)
+	sm := New(stateStopped, nil, 3, 3, 0)
 	sm.On(cmdStop, stateStopped, func(s State, ctx Context, e *Event) State {
 		return s
 	})
@@ -101,7 +101,7 @@ func ExampleStateMachine() {
 	var seqNum int = 1
 
 	// Allocate space for 3 states, 3 commands and 10 requests in the channel.
-	sm := NewStateMachine(stateStopped, &seqNum, 3, 3, 10)
+	sm := New(stateStopped, &seqNum, 3, 3, 10)
 
 	handleRun := func(s State, ctx Context, e *Event) (next State) {
 		var seq *int = ctx.(*int)

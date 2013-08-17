@@ -73,7 +73,7 @@ type StateMachine struct {
 // Create new StateMachine. Allocate internal memory for particular number of
 // states and events, set internal channel size. As long as the internal channel
 // is not full, most of the methods are non-blocking.
-func NewStateMachine(initState State, initCtx Context, stateCount, eventCount, mailboxSize uint) *StateMachine {
+func New(initState State, initCtx Context, stateCount, eventCount, mailboxSize uint) *StateMachine {
 	// Allocate enough space for the handlers.
 	table := make([][]EventHandler, stateCount)
 	for i := range table {
