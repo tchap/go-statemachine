@@ -259,7 +259,6 @@ func (sm *StateMachine) loop() {
 // ERRORS ---------------------------------------------------------------------
 
 var (
-
 	// Returned from Emit if there is no mapping for the current state and the
 	// event that is being emitted.
 	ErrIllegalEvent = errors.New("Illegal event received")
