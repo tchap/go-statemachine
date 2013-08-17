@@ -87,6 +87,7 @@ func BenchmarkStateMachine(bm *testing.B) {
 	})
 
 	bm.ResetTimer()
+
 	for i := 0; i < bm.N; i++ {
 		exit := make(chan error, 1)
 		sm.Emit(&Event{cmdStop, nil}, exit)
@@ -99,7 +100,7 @@ func BenchmarkStateMachine(bm *testing.B) {
 func ExampleStateMachine() {
 	var seqNum int = 1
 
-	// Allocate space for 3 states and 3 commands.
+	// Allocate space for 3 states, 3 commands and 10 requests in the channel.
 	sm := NewStateMachine(stateStopped, &seqNum, 3, 3, 10)
 
 	handleRun := func(s State, ctx Context, e *Event) (next State) {
