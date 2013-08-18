@@ -132,6 +132,7 @@ func ExampleStateMachine() {
 	// Allocate a new Context which is going to keep our data between
 	// the handler calls.
 	ctx := new(Context)
+	fmt.Printf("Context struct: %#v\n", ctx)
 
 	// RUN
 	sm.On(cmdRun, stateStopped, ctx.handleRun)
@@ -183,6 +184,7 @@ func ExampleStateMachine() {
 
 	fmt.Println("Goroutine exited")
 	// Output:
+	// Context struct: &statemachine.Context{seq:0}
 	// Event number 1 received
 	// STOPPED -> RUNNING by RUN
 	// Event number 2 received
