@@ -165,8 +165,7 @@ func ExampleStateMachine() {
 			eventCh <- stop
 			eventCh <- run
 			eventCh <- cls
-			sm.Terminate()
-			close(eventCh)
+			close(exit)
 		}()
 
 		for {
@@ -174,13 +173,19 @@ func ExampleStateMachine() {
 			case event := <-eventCh:
 				sm.Emit(event, nil)
 			case <-sm.TerminatedChannel():
-				close(exit)
 				return
 			}
 		}
 	}()
 
+	// Wait for the inner goroutine to close the exit channel.
 	<-exit
+
+	// Close our state machine.
+	sm.Terminate()
+
+	// Wait for the state machine to terminate.
+	<-sm.TerminatedChannel()
 
 	fmt.Println("Goroutine exited")
 	// Output:
