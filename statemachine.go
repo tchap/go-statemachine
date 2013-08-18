@@ -45,9 +45,7 @@ type Event struct {
 // is emitted.
 //
 // Once a handler is invoked, its role is to take the StateMachine into the next
-// state, doing some useful work on the way. There is a context variable that
-// is to be used to keep come useful data between handler calls. So, the state
-// is for consistency, the context is for keeping data.
+// state, doing some useful work on the way.
 //
 // If an event is emitted in a state where no handler is defined,
 // ErrIllegalEvent is returned.
