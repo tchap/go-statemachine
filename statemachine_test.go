@@ -26,47 +26,6 @@ import (
 	"testing"
 )
 
-// Tests ----------------------------------------------------------------------
-
-func TestErrIllegalEvent(test *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
-	defer sm.Terminate()
-
-	errCh := make(chan error, 1)
-	sm.Emit(&Event{cmdStop, nil}, errCh)
-	if err := <-errCh; err != ErrIllegalEvent {
-		test.Errorf("Unexpected error received: %s", err)
-	}
-}
-
-func TestErrTerminated(test *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
-	err := sm.Terminate()
-	if err != nil {
-		test.Fatal(err)
-	}
-	if err := sm.Terminate(); err != ErrTerminated {
-		test.Errorf("Unexpected error received: %s", err)
-	}
-}
-
-// Benchmarks -----------------------------------------------------------------
-
-func BenchmarkStateMachine(bm *testing.B) {
-	sm := New(stateStopped, 3, 3, 0)
-	sm.On(cmdStop, stateStopped, func(s State, e *Event) State {
-		return s
-	})
-
-	bm.ResetTimer()
-
-	for i := 0; i < bm.N; i++ {
-		exit := make(chan error, 1)
-		sm.Emit(&Event{cmdStop, nil}, exit)
-		<-exit
-	}
-}
-
 // Examples -------------------------------------------------------------------
 
 const (
@@ -207,4 +166,45 @@ func ExampleStateMachine() {
 	// Event number 8 received
 	// RUNNING -> CLOSED by CLOSE
 	// Goroutine exited
+}
+
+// Tests ----------------------------------------------------------------------
+
+func TestStateMachine_ReturnErrIllegalEvent(test *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+	defer sm.Terminate()
+
+	errCh := make(chan error, 1)
+	sm.Emit(&Event{cmdStop, nil}, errCh)
+	if err := <-errCh; err != ErrIllegalEvent {
+		test.Errorf("Unexpected error received: %s", err)
+	}
+}
+
+func TestStateMachine_ReturnErrTerminated(test *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+	err := sm.Terminate()
+	if err != nil {
+		test.Fatal(err)
+	}
+	if err := sm.Terminate(); err != ErrTerminated {
+		test.Errorf("Unexpected error received: %s", err)
+	}
+}
+
+// Benchmarks -----------------------------------------------------------------
+
+func BenchmarkStateMachine(bm *testing.B) {
+	sm := New(stateStopped, 3, 3, 0)
+	sm.On(cmdStop, stateStopped, func(s State, e *Event) State {
+		return s
+	})
+
+	bm.ResetTimer()
+
+	for i := 0; i < bm.N; i++ {
+		exit := make(chan error, 1)
+		sm.Emit(&Event{cmdStop, nil}, exit)
+		<-exit
+	}
 }
