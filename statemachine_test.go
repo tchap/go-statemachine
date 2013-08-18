@@ -26,6 +26,49 @@ import (
 	"testing"
 )
 
+// Tests ----------------------------------------------------------------------
+
+func TestErrIllegalEvent(test *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+	defer sm.Terminate()
+
+	errCh := make(chan error, 1)
+	sm.Emit(&Event{cmdStop, nil}, errCh)
+	if err := <-errCh; err != ErrIllegalEvent {
+		test.Errorf("Unexpected error received: %s", err)
+	}
+}
+
+func TestErrTerminated(test *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+	err := sm.Terminate()
+	if err != nil {
+		test.Fatal(err)
+	}
+	if err := sm.Terminate(); err != ErrTerminated {
+		test.Errorf("Unexpected error received: %s", err)
+	}
+}
+
+// Benchmarks -----------------------------------------------------------------
+
+func BenchmarkStateMachine(bm *testing.B) {
+	sm := New(stateStopped, 3, 3, 0)
+	sm.On(cmdStop, stateStopped, func(s State, e *Event) State {
+		return s
+	})
+
+	bm.ResetTimer()
+
+	for i := 0; i < bm.N; i++ {
+		exit := make(chan error, 1)
+		sm.Emit(&Event{cmdStop, nil}, exit)
+		<-exit
+	}
+}
+
+// Examples -------------------------------------------------------------------
+
 const (
 	stateStopped State = iota
 	stateRunning
@@ -54,91 +97,51 @@ func cmdToString(t EventType) string {
 	}[t]
 }
 
-// Tests ----------------------------------------------------------------------
-
-func TestErrIllegalEvent(test *testing.T) {
-	sm := New(stateStopped, nil, 3, 3, 0)
-	defer sm.Terminate()
-
-	errCh := make(chan error, 1)
-	sm.Emit(&Event{cmdStop, nil}, errCh)
-	if err := <-errCh; err != ErrIllegalEvent {
-		test.Errorf("Unexpected error received: %s", err)
-	}
+type Context struct {
+	seq int
 }
 
-func TestErrTerminated(test *testing.T) {
-	sm := New(stateStopped, nil, 3, 3, 0)
-	err := sm.Terminate()
-	if err != nil {
-		test.Fatal(err)
-	}
-	if err := sm.Terminate(); err != ErrTerminated {
-		test.Errorf("Unexpected error received: %s", err)
-	}
+func (ctx *Context) handleRun(s State, e *Event) (next State) {
+	ctx.seq += 1
+	fmt.Printf("Event number %d received\n", ctx.seq)
+
+	fmt.Printf("%s -> %s by %s\n", stateToString(s), stateToString(stateRunning), cmdToString(e.Type))
+	return stateRunning
 }
 
-// Benchmarks -----------------------------------------------------------------
+func (ctx *Context) handleStop(s State, e *Event) (next State) {
+	ctx.seq += 1
+	fmt.Printf("Event number %d received\n", ctx.seq)
 
-func BenchmarkStateMachine(bm *testing.B) {
-	sm := New(stateStopped, nil, 3, 3, 0)
-	sm.On(cmdStop, stateStopped, func(s State, ctx Context, e *Event) State {
-		return s
-	})
-
-	bm.ResetTimer()
-
-	for i := 0; i < bm.N; i++ {
-		exit := make(chan error, 1)
-		sm.Emit(&Event{cmdStop, nil}, exit)
-		<-exit
-	}
+	fmt.Printf("%s -> %s by %s\n", stateToString(s), stateToString(stateStopped), cmdToString(e.Type))
+	return stateStopped
 }
 
-// Examples -------------------------------------------------------------------
+func (ctx *Context) handleClose(s State, e *Event) (next State) {
+	ctx.seq += 1
+	fmt.Printf("Event number %d received\n", ctx.seq)
+
+	fmt.Printf("%s -> %s by %s\n", stateToString(s), stateToString(stateClosed), cmdToString(e.Type))
+	return stateClosed
+}
 
 func ExampleStateMachine() {
-	var seqNum int = 1
-
 	// Allocate space for 3 states, 3 commands and 10 requests in the channel.
-	sm := New(stateStopped, &seqNum, 3, 3, 10)
+	sm := New(stateStopped, 3, 3, 10)
 
-	handleRun := func(s State, ctx Context, e *Event) (next State) {
-		var seq *int = ctx.(*int)
-		fmt.Printf("Event number %d received\n", *seq)
-		*seq += 1
-
-		fmt.Printf("%s -> %s by %s\n", stateToString(s), stateToString(stateRunning), cmdToString(e.Type))
-		return stateRunning
-	}
-
-	handleStop := func(s State, ctx Context, e *Event) (next State) {
-		var seq *int = ctx.(*int)
-		fmt.Printf("Event number %d received\n", *seq)
-		*seq += 1
-
-		fmt.Printf("%s -> %s by %s\n", stateToString(s), stateToString(stateStopped), cmdToString(e.Type))
-		return stateStopped
-	}
-
-	handleClose := func(s State, ctx Context, e *Event) (next State) {
-		var seq *int = ctx.(*int)
-		fmt.Printf("Event number %d received\n", *seq)
-		*seq += 1
-
-		fmt.Printf("%s -> %s by %s\n", stateToString(s), stateToString(stateClosed), cmdToString(e.Type))
-		return stateClosed
-	}
+	// Allocate a new Context which is going to keep our data between
+	// the handler calls.
+	ctx := new(Context)
 
 	// RUN
-	sm.On(cmdRun, stateStopped, handleRun)
+	sm.On(cmdRun, stateStopped, ctx.handleRun)
 
 	// STOP
-	sm.On(cmdStop, stateRunning, handleStop)
+	sm.On(cmdStop, stateRunning, ctx.handleStop)
 
 	// CLOSE
-	sm.On(cmdClose, stateStopped, handleClose)
-	sm.On(cmdClose, stateRunning, handleClose)
+	sm.On(cmdClose, stateStopped, ctx.handleClose)
+	sm.On(cmdClose, stateRunning, ctx.handleClose)
 
 	var (
 		run  = &Event{cmdRun, nil}

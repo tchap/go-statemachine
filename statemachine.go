@@ -30,13 +30,13 @@ import (
 type (
 	State     int
 	EventType int
-	Context   interface{}
+	EventData interface{}
 )
 
 // Events are the basic units that can be processed by a state machine.
 type Event struct {
 	Type EventType
-	Data interface{}
+	Data EventData
 }
 
 // Various EventHandlers can be registered to process events in particular states.
@@ -51,7 +51,7 @@ type Event struct {
 //
 // If an event is emitted in a state where no handler is defined,
 // ErrIllegalEvent is returned.
-type EventHandler func(state State, ctx Context, evt *Event) (next State)
+type EventHandler func(s State, e *Event) (next State)
 
 // StateMachine is the only struct this package exports. Once an event is
 // emitted on a StateMachine, the relevant handler is fetched and invoked.
@@ -59,11 +59,13 @@ type EventHandler func(state State, ctx Context, evt *Event) (next State)
 // It does not use any locking, just channels. While that may be a bit more
 // overhead, it is more robust and clear.
 type StateMachine struct {
+	// Internal StateMachine state
 	state State
-	ctx   Context
 
+	// Registered event handlers
 	handlers [][]EventHandler
 
+	// Communication channels
 	cmdCh        chan *command // Send commands to the background loop
 	terminatedCh chan struct{} // Signal that the state machine is terminated
 }
@@ -72,8 +74,8 @@ type StateMachine struct {
 
 // Create new StateMachine. Allocate internal memory for particular number of
 // states and events, set internal channel size. As long as the internal channel
-// is not full, most of the methods are non-blocking.
-func New(initState State, initCtx Context, stateCount, eventCount, mailboxSize uint) *StateMachine {
+// is not full, all the exported methods are non-blocking.
+func New(initState State, stateCount, eventCount, chanSize uint) *StateMachine {
 	// Allocate enough space for the handlers.
 	table := make([][]EventHandler, stateCount)
 	for i := range table {
@@ -82,9 +84,8 @@ func New(initState State, initCtx Context, stateCount, eventCount, mailboxSize u
 
 	sm := StateMachine{
 		state:        initState,
-		ctx:          initCtx,
 		handlers:     table,
-		cmdCh:        make(chan *command, mailboxSize),
+		cmdCh:        make(chan *command, chanSize),
 		terminatedCh: make(chan struct{}),
 	}
 
@@ -98,7 +99,7 @@ func New(initState State, initCtx Context, stateCount, eventCount, mailboxSize u
 
 const (
 	cmdOn EventType = iota
-	cmdIsHandlerDefined
+	cmdIsHandlerAssigned
 	cmdOff
 	cmdEmit
 	cmdTerminate
@@ -126,9 +127,9 @@ func (sm *StateMachine) On(t EventType, s State, h EventHandler) error {
 	})
 }
 
-// IsHandlerDefined -----------------------------------------------------------
+// IsHandlerAssigned ----------------------------------------------------------
 
-type cmdIsHandlerDefinedArgs struct {
+type cmdIsHandlerAssignedArgs struct {
 	s  State
 	t  EventType
 	ch chan bool
@@ -136,11 +137,11 @@ type cmdIsHandlerDefinedArgs struct {
 
 // Check if a handler is defined for this state and event.
 // It is non-blocking as long as the internal channel is not full.
-func (sm *StateMachine) IsHandlerDefined(t EventType, s State) (defined bool, err error) {
+func (sm *StateMachine) IsHandlerAssigned(t EventType, s State) (defined bool, err error) {
 	replyCh := make(chan bool, 1)
 	err = sm.send(&command{
-		cmdIsHandlerDefined,
-		&cmdIsHandlerDefinedArgs{s, t, replyCh},
+		cmdIsHandlerAssigned,
+		&cmdIsHandlerAssignedArgs{s, t, replyCh},
 	})
 	if err != nil {
 		return
@@ -226,8 +227,8 @@ func (sm *StateMachine) loop() {
 		case cmdOn:
 			args := cmd.args.(*cmdOnArgs)
 			sm.handlers[args.s][args.t] = args.h
-		case cmdIsHandlerDefined:
-			args := cmd.args.(*cmdIsHandlerDefinedArgs)
+		case cmdIsHandlerAssigned:
+			args := cmd.args.(*cmdIsHandlerAssignedArgs)
 			args.ch <- (sm.handlers[args.s][args.t] == nil)
 			close(args.ch)
 		case cmdOff:
@@ -245,7 +246,7 @@ func (sm *StateMachine) loop() {
 				args.ch <- nil
 				close(args.ch)
 			}
-			next := handler(sm.state, sm.ctx, args.e)
+			next := handler(sm.state, args.e)
 			sm.state = next
 		case cmdTerminate:
 			close(sm.terminatedCh)
