@@ -94,14 +94,20 @@ func ExampleStateMachine() {
 	fmt.Printf("Context struct: %#v\n", ctx)
 
 	// RUN
-	sm.On(cmdRun, stateStopped, ctx.handleRun)
+	sm.On(cmdRun, []State{
+		stateStopped,
+	}, ctx.handleRun)
 
 	// STOP
-	sm.On(cmdStop, stateRunning, ctx.handleStop)
+	sm.On(cmdStop, []State{
+		stateRunning,
+	}, ctx.handleStop)
 
 	// CLOSE
-	sm.On(cmdClose, stateStopped, ctx.handleClose)
-	sm.On(cmdClose, stateRunning, ctx.handleClose)
+	sm.On(cmdClose, []State{
+		stateStopped,
+		stateRunning,
+	}, ctx.handleClose)
 
 	var (
 		run  = &Event{cmdRun, nil}
@@ -196,7 +202,9 @@ func TestStateMachine_ReturnErrTerminated(test *testing.T) {
 
 func BenchmarkStateMachine(bm *testing.B) {
 	sm := New(stateStopped, 3, 3, 0)
-	sm.On(cmdStop, stateStopped, func(s State, e *Event) State {
+	sm.On(cmdStop, []State{
+		stateStopped,
+	}, func(s State, e *Event) State {
 		return s
 	})
 

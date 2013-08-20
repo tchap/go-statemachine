@@ -118,11 +118,16 @@ type cmdOnArgs struct {
 
 // Register an event handler. Only one handler can be set per state and event.
 // It is non-blocking as long as the internal channel is not full.
-func (sm *StateMachine) On(t EventType, s State, h EventHandler) error {
-	return sm.send(&command{
-		cmdOn,
-		&cmdOnArgs{s, t, h},
-	})
+func (sm *StateMachine) On(t EventType, ss []State, h EventHandler) error {
+	for _, s := range ss {
+		if err := sm.send(&command{
+			cmdOn,
+			&cmdOnArgs{s, t, h},
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // IsHandlerAssigned ----------------------------------------------------------
@@ -263,5 +268,5 @@ var (
 	ErrIllegalEvent = errors.New("Illegal event received")
 
 	// Returned from a method if the state machine is already terminated.
-	ErrTerminated   = errors.New("State machine terminated")
+	ErrTerminated = errors.New("State machine terminated")
 )
