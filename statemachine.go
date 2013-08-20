@@ -97,8 +97,8 @@ func New(initState State, stateCount, eventCount, chanSize uint) *StateMachine {
 
 const (
 	cmdOn EventType = iota
-	cmdIsHandlerAssigned
 	cmdOff
+	cmdIsHandlerAssigned
 	cmdEmit
 	cmdSetState
 	cmdTerminate
@@ -131,6 +131,22 @@ func (sm *StateMachine) On(t EventType, ss []State, h EventHandler) error {
 	return nil
 }
 
+// Off ------------------------------------------------------------------------
+
+type offArgs struct {
+	s State
+	t EventType
+}
+
+// Drop a handler assigned to the state and event.
+// It is non-blocking as long as the internal channel is not full.
+func (sm *StateMachine) Off(t EventType, s State) error {
+	return sm.send(&command{
+		cmdOff,
+		&offArgs{s, t},
+	})
+}
+
 // IsHandlerAssigned ----------------------------------------------------------
 
 type isHandlerAssignedArgs struct {
@@ -152,22 +168,6 @@ func (sm *StateMachine) IsHandlerAssigned(t EventType, s State) (defined bool, e
 	}
 	defined = <-replyCh
 	return
-}
-
-// Off ------------------------------------------------------------------------
-
-type offArgs struct {
-	s State
-	t EventType
-}
-
-// Drop a handler assigned to the state and event.
-// It is non-blocking as long as the internal channel is not full.
-func (sm *StateMachine) Off(t EventType, s State) error {
-	return sm.send(&command{
-		cmdOff,
-		&offArgs{s, t},
-	})
 }
 
 // Emit -----------------------------------------------------------------------
@@ -258,7 +258,7 @@ func (sm *StateMachine) loop() {
 			sm.handlers[args.s][args.t] = args.h
 		case cmdIsHandlerAssigned:
 			args := cmd.args.(*isHandlerAssignedArgs)
-			args.ch <- (sm.handlers[args.s][args.t] == nil)
+			args.ch <- (sm.handlers[args.s][args.t] != nil)
 			close(args.ch)
 		case cmdOff:
 			args := cmd.args.(*offArgs)

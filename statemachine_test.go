@@ -24,6 +24,7 @@ package statemachine
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 // Examples -------------------------------------------------------------------
@@ -176,7 +177,99 @@ func ExampleStateMachine() {
 
 // Tests ----------------------------------------------------------------------
 
-func TestStateMachine_SetState(test *testing.T) {
+func forwardState(s State, e *Event) State {
+	return s
+}
+
+func TestStateMachine_On(t *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+	defer sm.Terminate()
+
+	sm.On(cmdRun, []State{
+		stateStopped,
+	}, forwardState)
+
+	ok, err := sm.IsHandlerAssigned(cmdRun, stateStopped)
+	if err != nil {
+		t.Error(err)
+	}
+	if !ok {
+		t.Fail()
+	}
+}
+
+func TestStateMachine_Off(t *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+	defer sm.Terminate()
+
+	sm.On(cmdRun, []State{
+		stateStopped,
+	}, forwardState)
+
+	sm.Off(cmdRun, stateStopped)
+
+	ok, err := sm.IsHandlerAssigned(cmdRun, stateStopped)
+	if err != nil {
+		t.Error(err)
+	}
+	if ok {
+		t.Fail()
+	}
+}
+
+func TestStateMachine_IsHandlerAssigned(t *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+	defer sm.Terminate()
+
+	sm.On(cmdRun, []State{
+		stateStopped,
+	}, forwardState)
+
+	ok, err := sm.IsHandlerAssigned(cmdRun, stateStopped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fail()
+	}
+
+	ok, err = sm.IsHandlerAssigned(cmdStop, stateRunning)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fail()
+	}
+}
+
+func TestStateMachine_Emit(t *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+	defer sm.Terminate()
+
+	emitCh := make(chan struct{})
+
+	sm.On(cmdRun, []State{
+		stateStopped,
+	}, func(s State, e *Event) State {
+		ch := e.Data.(chan struct{})
+		close(ch)
+		return s
+	})
+
+	sm.Emit(&Event{
+		cmdRun,
+		emitCh,
+	}, nil)
+
+	select {
+	case <-emitCh:
+		break
+	case <-time.After(time.Second):
+		t.Error("Test timed out")
+	}
+}
+
+func TestStateMachine_SetState(t *testing.T) {
 	// Start in STOPPED.
 	sm := New(stateStopped, 3, 3, 0)
 	defer sm.Terminate()
@@ -184,51 +277,65 @@ func TestStateMachine_SetState(test *testing.T) {
 	// Allow RUNNING -> STOPPED.
 	sm.On(cmdStop, []State{
 		stateRunning,
-	}, func(s State, e *Event) State {
-		return s
-	})
+	}, forwardState)
 
 	// Set state to RUNNING.
 	errCh := make(chan error, 1)
 	sm.SetState(stateRunning, errCh)
 	if err := <-errCh; err != nil {
-		test.Fatal(err)
+		t.Fatal(err)
 	}
 
 	// Emit STOP, which should pass if we are in RUNNING.
 	errCh = make(chan error, 1)
 	sm.Emit(&Event{cmdStop, nil}, errCh)
 	if err := <-errCh; err != nil {
-		test.Log(sm.state)
-		test.Fatal(err)
+		t.Log(sm.state)
+		t.Fatal(err)
 	}
 }
 
-func TestStateMachine_ReturnErrIllegalEvent(test *testing.T) {
+func TestStateMachine_Terminate(t *testing.T) {
+	sm := New(stateStopped, 3, 3, 0)
+
+	err := sm.Terminate()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-sm.TerminatedChannel():
+		break
+	case <-time.After(time.Second):
+		t.Error("Test timed out")
+	}
+}
+
+func TestStateMachine_FailWithErrIllegalEvent(t *testing.T) {
 	sm := New(stateStopped, 3, 3, 0)
 	defer sm.Terminate()
 
 	errCh := make(chan error, 1)
 	sm.Emit(&Event{cmdStop, nil}, errCh)
 	if err := <-errCh; err != ErrIllegalEvent {
-		test.Errorf("Unexpected error received: %s", err)
+		t.Errorf("Unexpected error received: %s", err)
 	}
 }
 
-func TestStateMachine_ReturnErrTerminated(test *testing.T) {
+func TestStateMachine_FailWithErrTerminated(t *testing.T) {
 	sm := New(stateStopped, 3, 3, 0)
 	err := sm.Terminate()
 	if err != nil {
-		test.Fatal(err)
+		t.Fatal(err)
 	}
 	if err := sm.Terminate(); err != ErrTerminated {
-		test.Errorf("Unexpected error received: %s", err)
+		t.Errorf("Unexpected error received: %s", err)
 	}
 }
 
 // Benchmarks -----------------------------------------------------------------
 
-func BenchmarkStateMachine(bm *testing.B) {
+func BenchmarkStateMachine(b *testing.B) {
 	sm := New(stateStopped, 3, 3, 0)
 	sm.On(cmdStop, []State{
 		stateStopped,
@@ -236,9 +343,9 @@ func BenchmarkStateMachine(bm *testing.B) {
 		return s
 	})
 
-	bm.ResetTimer()
+	b.ResetTimer()
 
-	for i := 0; i < bm.N; i++ {
+	for i := 0; i < b.N; i++ {
 		exit := make(chan error, 1)
 		sm.Emit(&Event{cmdStop, nil}, exit)
 		<-exit
