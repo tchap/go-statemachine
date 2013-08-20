@@ -179,11 +179,15 @@ type cmdEmitArgs struct {
 // Emit a new event. It is possible to pass a channel to the internal loop
 // to check if the handler was found and scheduled for execution.
 // It is non-blocking as long as the internal channel is not full.
-func (sm *StateMachine) Emit(event *Event, replyCh chan error) error {
-	return sm.send(&command{
+func (sm *StateMachine) Emit(event *Event, errCh chan error) {
+	err := sm.send(&command{
 		cmdEmit,
-		&cmdEmitArgs{event, replyCh},
+		&cmdEmitArgs{event, errCh},
 	})
+	if err != nil {
+		errCh <- err
+		close(errCh)
+	}
 }
 
 // Terminate ------------------------------------------------------------------
