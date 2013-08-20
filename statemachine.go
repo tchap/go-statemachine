@@ -100,6 +100,7 @@ const (
 	cmdIsHandlerAssigned
 	cmdOff
 	cmdEmit
+	cmdSetState
 	cmdTerminate
 )
 
@@ -110,7 +111,7 @@ type command struct {
 
 // On -------------------------------------------------------------------------
 
-type cmdOnArgs struct {
+type onArgs struct {
 	s State
 	t EventType
 	h EventHandler
@@ -122,7 +123,7 @@ func (sm *StateMachine) On(t EventType, ss []State, h EventHandler) error {
 	for _, s := range ss {
 		if err := sm.send(&command{
 			cmdOn,
-			&cmdOnArgs{s, t, h},
+			&onArgs{s, t, h},
 		}); err != nil {
 			return err
 		}
@@ -132,7 +133,7 @@ func (sm *StateMachine) On(t EventType, ss []State, h EventHandler) error {
 
 // IsHandlerAssigned ----------------------------------------------------------
 
-type cmdIsHandlerAssignedArgs struct {
+type isHandlerAssignedArgs struct {
 	s  State
 	t  EventType
 	ch chan bool
@@ -144,7 +145,7 @@ func (sm *StateMachine) IsHandlerAssigned(t EventType, s State) (defined bool, e
 	replyCh := make(chan bool, 1)
 	err = sm.send(&command{
 		cmdIsHandlerAssigned,
-		&cmdIsHandlerAssignedArgs{s, t, replyCh},
+		&isHandlerAssignedArgs{s, t, replyCh},
 	})
 	if err != nil {
 		return
@@ -155,7 +156,7 @@ func (sm *StateMachine) IsHandlerAssigned(t EventType, s State) (defined bool, e
 
 // Off ------------------------------------------------------------------------
 
-type cmdOffArgs struct {
+type offArgs struct {
 	s State
 	t EventType
 }
@@ -165,24 +166,45 @@ type cmdOffArgs struct {
 func (sm *StateMachine) Off(t EventType, s State) error {
 	return sm.send(&command{
 		cmdOff,
-		&cmdOffArgs{s, t},
+		&offArgs{s, t},
 	})
 }
 
 // Emit -----------------------------------------------------------------------
 
-type cmdEmitArgs struct {
+type emitArgs struct {
 	e  *Event
-	ch chan error
+	ch chan<- error
 }
 
 // Emit a new event. It is possible to pass a channel to the internal loop
 // to check if the handler was found and scheduled for execution.
 // It is non-blocking as long as the internal channel is not full.
-func (sm *StateMachine) Emit(event *Event, errCh chan error) {
+func (sm *StateMachine) Emit(event *Event, errCh chan<- error) {
 	err := sm.send(&command{
 		cmdEmit,
-		&cmdEmitArgs{event, errCh},
+		&emitArgs{event, errCh},
+	})
+	if err != nil {
+		errCh <- err
+		close(errCh)
+	}
+}
+
+// SetState -------------------------------------------------------------------
+
+type setStateArgs struct {
+	s  State
+	ch chan<- error
+}
+
+// SetState changes the internal state machine state, nothing more, nothing less.
+// It uses the internal command queue, so it is appended to the current list of
+// pending events.
+func (sm *StateMachine) SetState(state State, errCh chan<- error) {
+	err := sm.send(&command{
+		cmdSetState,
+		&setStateArgs{state, errCh},
 	})
 	if err != nil {
 		errCh <- err
@@ -232,17 +254,17 @@ func (sm *StateMachine) loop() {
 		cmd := <-sm.cmdCh
 		switch cmd.cmd {
 		case cmdOn:
-			args := cmd.args.(*cmdOnArgs)
+			args := cmd.args.(*onArgs)
 			sm.handlers[args.s][args.t] = args.h
 		case cmdIsHandlerAssigned:
-			args := cmd.args.(*cmdIsHandlerAssignedArgs)
+			args := cmd.args.(*isHandlerAssignedArgs)
 			args.ch <- (sm.handlers[args.s][args.t] == nil)
 			close(args.ch)
 		case cmdOff:
-			args := cmd.args.(*cmdOffArgs)
+			args := cmd.args.(*offArgs)
 			sm.handlers[args.s][args.t] = nil
 		case cmdEmit:
-			args := cmd.args.(*cmdEmitArgs)
+			args := cmd.args.(*emitArgs)
 			handler := sm.handlers[sm.state][args.e.Type]
 			if args.ch != nil {
 				if handler == nil {
@@ -250,11 +272,16 @@ func (sm *StateMachine) loop() {
 					close(args.ch)
 					continue
 				}
-				args.ch <- nil
 				close(args.ch)
 			}
 			next := handler(sm.state, args.e)
 			sm.state = next
+		case cmdSetState:
+			args := cmd.args.(*setStateArgs)
+			sm.state = args.s
+			if args.ch != nil {
+				close(args.ch)
+			}
 		case cmdTerminate:
 			close(sm.terminatedCh)
 			return

@@ -176,6 +176,34 @@ func ExampleStateMachine() {
 
 // Tests ----------------------------------------------------------------------
 
+func TestStateMachine_SetState(test *testing.T) {
+	// Start in STOPPED.
+	sm := New(stateStopped, 3, 3, 0)
+	defer sm.Terminate()
+
+	// Allow RUNNING -> STOPPED.
+	sm.On(cmdStop, []State{
+		stateRunning,
+	}, func(s State, e *Event) State {
+		return s
+	})
+
+	// Set state to RUNNING.
+	errCh := make(chan error, 1)
+	sm.SetState(stateRunning, errCh)
+	if err := <-errCh; err != nil {
+		test.Fatal(err)
+	}
+
+	// Emit STOP, which should pass if we are in RUNNING.
+	errCh = make(chan error, 1)
+	sm.Emit(&Event{cmdStop, nil}, errCh)
+	if err := <-errCh; err != nil {
+		test.Log(sm.state)
+		test.Fatal(err)
+	}
+}
+
 func TestStateMachine_ReturnErrIllegalEvent(test *testing.T) {
 	sm := New(stateStopped, 3, 3, 0)
 	defer sm.Terminate()
