@@ -87,7 +87,7 @@ func (ctx *Context) handleClose(s State, e *Event) (next State) {
 
 func ExampleStateMachine() {
 	// Allocate space for 3 states, 3 commands and 10 requests in the channel.
-	sm := New(stateStopped, 3, 3, 10)
+	sm := New(stateStopped, 3, 3)
 
 	// Allocate a new Context which is going to keep our data between
 	// the handler calls.
@@ -116,10 +116,10 @@ func ExampleStateMachine() {
 		cls  = &Event{cmdClose, nil}
 	)
 
-	sm.Emit(run, nil)
-	sm.Emit(stop, nil)
-	sm.Emit(run, nil)
-	sm.Emit(stop, nil)
+	sm.Emit(run)
+	sm.Emit(stop)
+	sm.Emit(run)
+	sm.Emit(stop)
 
 	// Show how to write an event producer.
 	exit := make(chan struct{})
@@ -137,7 +137,7 @@ func ExampleStateMachine() {
 		for {
 			select {
 			case event := <-eventCh:
-				sm.Emit(event, nil)
+				sm.Emit(event)
 			case <-sm.TerminatedChannel():
 				return
 			}
@@ -182,7 +182,7 @@ func forwardState(s State, e *Event) State {
 }
 
 func TestStateMachine_On(t *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 	defer sm.Terminate()
 
 	sm.On(cmdRun, []State{
@@ -199,7 +199,7 @@ func TestStateMachine_On(t *testing.T) {
 }
 
 func TestStateMachine_Off(t *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 	defer sm.Terminate()
 
 	sm.On(cmdRun, []State{
@@ -218,7 +218,7 @@ func TestStateMachine_Off(t *testing.T) {
 }
 
 func TestStateMachine_IsHandlerAssigned(t *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 	defer sm.Terminate()
 
 	sm.On(cmdRun, []State{
@@ -243,7 +243,7 @@ func TestStateMachine_IsHandlerAssigned(t *testing.T) {
 }
 
 func TestStateMachine_Emit(t *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 	defer sm.Terminate()
 
 	emitCh := make(chan struct{})
@@ -256,10 +256,12 @@ func TestStateMachine_Emit(t *testing.T) {
 		return s
 	})
 
-	sm.Emit(&Event{
+	if err := sm.Emit(&Event{
 		cmdRun,
 		emitCh,
-	}, nil)
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	select {
 	case <-emitCh:
@@ -271,7 +273,7 @@ func TestStateMachine_Emit(t *testing.T) {
 
 func TestStateMachine_SetState(t *testing.T) {
 	// Start in STOPPED.
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 	defer sm.Terminate()
 
 	// Allow RUNNING -> STOPPED.
@@ -280,23 +282,16 @@ func TestStateMachine_SetState(t *testing.T) {
 	}, forwardState)
 
 	// Set state to RUNNING.
-	errCh := make(chan error, 1)
-	sm.SetState(stateRunning, errCh)
-	if err := <-errCh; err != nil {
-		t.Fatal(err)
-	}
+	sm.SetState(stateRunning)
 
 	// Emit STOP, which should pass if we are in RUNNING.
-	errCh = make(chan error, 1)
-	sm.Emit(&Event{cmdStop, nil}, errCh)
-	if err := <-errCh; err != nil {
-		t.Log(sm.state)
+	if err := sm.Emit(&Event{cmdStop, nil}); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestStateMachine_Terminate(t *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 
 	err := sm.Terminate()
 	if err != nil {
@@ -312,18 +307,16 @@ func TestStateMachine_Terminate(t *testing.T) {
 }
 
 func TestStateMachine_FailWithErrIllegalEvent(t *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 	defer sm.Terminate()
 
-	errCh := make(chan error, 1)
-	sm.Emit(&Event{cmdStop, nil}, errCh)
-	if err := <-errCh; err != ErrIllegalEvent {
+	if err := sm.Emit(&Event{cmdStop, nil}); err != ErrIllegalEvent {
 		t.Errorf("Unexpected error received: %s", err)
 	}
 }
 
 func TestStateMachine_FailWithErrTerminated(t *testing.T) {
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 	err := sm.Terminate()
 	if err != nil {
 		t.Fatal(err)
@@ -336,18 +329,17 @@ func TestStateMachine_FailWithErrTerminated(t *testing.T) {
 // Benchmarks -----------------------------------------------------------------
 
 func BenchmarkStateMachine(b *testing.B) {
-	sm := New(stateStopped, 3, 3, 0)
+	sm := New(stateStopped, 3, 3)
 	sm.On(cmdStop, []State{
 		stateStopped,
-	}, func(s State, e *Event) State {
-		return s
-	})
+	}, forwardState)
 
 	b.ResetTimer()
 
+	var err error
 	for i := 0; i < b.N; i++ {
-		exit := make(chan error, 1)
-		sm.Emit(&Event{cmdStop, nil}, exit)
-		<-exit
+		if err = sm.Emit(&Event{cmdStop, nil}); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

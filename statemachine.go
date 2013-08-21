@@ -56,6 +56,9 @@ type EventHandler func(s State, e *Event) (next State)
 // StateMachine takes care of all the synchronization, it is thread-safe.
 // It does not use any locking, just channels. While that may be a bit more
 // overhead, it is more robust and clear.
+//
+// It uses an unbuffered channel for passing events to the internal goroutine,
+// so all the methods block until their requests read from that channel.
 type StateMachine struct {
 	// Internal StateMachine state
 	state State
@@ -71,9 +74,8 @@ type StateMachine struct {
 // CONSTRUCTOR ----------------------------------------------------------------
 
 // Create new StateMachine. Allocate internal memory for particular number of
-// states and events, set internal channel size. As long as the internal channel
-// is not full, all the exported methods are non-blocking.
-func New(initState State, stateCount, eventCount, chanSize uint) *StateMachine {
+// states and events.
+func New(initState State, stateCount, eventCount uint) *StateMachine {
 	// Allocate enough space for the handlers.
 	table := make([][]EventHandler, stateCount)
 	for i := range table {
@@ -83,7 +85,7 @@ func New(initState State, stateCount, eventCount, chanSize uint) *StateMachine {
 	sm := StateMachine{
 		state:        initState,
 		handlers:     table,
-		cmdCh:        make(chan *command, chanSize),
+		cmdCh:        make(chan *command),
 		terminatedCh: make(chan struct{}),
 	}
 
@@ -118,7 +120,6 @@ type onArgs struct {
 }
 
 // Register an event handler. Only one handler can be set per state and event.
-// It is non-blocking as long as the internal channel is not full.
 func (sm *StateMachine) On(t EventType, ss []State, h EventHandler) error {
 	for _, s := range ss {
 		if err := sm.send(&command{
@@ -138,8 +139,7 @@ type offArgs struct {
 	t EventType
 }
 
-// Drop a handler assigned to the state and event.
-// It is non-blocking as long as the internal channel is not full.
+// Drop the handler assigned to the requested state and event.
 func (sm *StateMachine) Off(t EventType, s State) error {
 	return sm.send(&command{
 		cmdOff,
@@ -156,7 +156,6 @@ type isHandlerAssignedArgs struct {
 }
 
 // Check if a handler is defined for this state and event.
-// It is non-blocking as long as the internal channel is not full.
 func (sm *StateMachine) IsHandlerAssigned(t EventType, s State) (defined bool, err error) {
 	replyCh := make(chan bool, 1)
 	err = sm.send(&command{
@@ -177,39 +176,27 @@ type emitArgs struct {
 	ch chan<- error
 }
 
-// Emit a new event. It is possible to pass a channel to the internal loop
-// to check if the handler was found and scheduled for execution.
-// It is non-blocking as long as the internal channel is not full.
-func (sm *StateMachine) Emit(event *Event, errCh chan<- error) {
+// Emit an event. 
+func (sm *StateMachine) Emit(event *Event) error {
+	errCh := make(chan error, 1)
 	err := sm.send(&command{
 		cmdEmit,
 		&emitArgs{event, errCh},
 	})
 	if err != nil {
-		errCh <- err
-		close(errCh)
+		return err
 	}
+	return <-errCh
 }
 
 // SetState -------------------------------------------------------------------
 
-type setStateArgs struct {
-	s  State
-	ch chan<- error
-}
-
 // SetState changes the internal state machine state, nothing more, nothing less.
-// It uses the internal command queue, so it is appended to the current list of
-// pending events.
-func (sm *StateMachine) SetState(state State, errCh chan<- error) {
-	err := sm.send(&command{
+func (sm *StateMachine) SetState(state State) error {
+	return sm.send(&command{
 		cmdSetState,
-		&setStateArgs{state, errCh},
+		state,
 	})
-	if err != nil {
-		errCh <- err
-		close(errCh)
-	}
 }
 
 // Terminate ------------------------------------------------------------------
@@ -217,7 +204,6 @@ func (sm *StateMachine) SetState(state State, errCh chan<- error) {
 // Terminate the internal event loop and close all internal channels.
 // Particularly the termination channel is closed to signal all producers that
 // they can no longer emit any events and shall exit.
-// It is non-blocking as long as the internal channel is not full.
 func (sm *StateMachine) Terminate() error {
 	return sm.send(&command{
 		cmdTerminate,
@@ -256,22 +242,16 @@ func (sm *StateMachine) loop() {
 		case cmdEmit:
 			args := cmd.args.(*emitArgs)
 			handler := sm.handlers[sm.state][args.e.Type]
-			if args.ch != nil {
-				if handler == nil {
-					args.ch <- ErrIllegalEvent
-					close(args.ch)
-					continue
-				}
+			if handler == nil {
+				args.ch <- ErrIllegalEvent
 				close(args.ch)
+				continue
 			}
+			close(args.ch)
 			next := handler(sm.state, args.e)
 			sm.state = next
 		case cmdSetState:
-			args := cmd.args.(*setStateArgs)
-			sm.state = args.s
-			if args.ch != nil {
-				close(args.ch)
-			}
+			sm.state = cmd.args.(State)
 		case cmdOn:
 			args := cmd.args.(*onArgs)
 			sm.handlers[args.s][args.t] = args.h
