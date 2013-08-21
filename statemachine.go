@@ -231,7 +231,7 @@ func (sm *StateMachine) Terminate() error {
 // post events. You can just start them, pass them this termination channel
 // and leave them be. The only requirement is that those producer goroutines
 // should exit or simply stop posting any events as soon as the channel is closed.
-func (sm *StateMachine) TerminatedChannel() chan struct{} {
+func (sm *StateMachine) TerminatedChannel() (isTerminatedCh chan struct{}) {
 	return sm.terminatedCh
 }
 
@@ -253,16 +253,6 @@ func (sm *StateMachine) loop() {
 	for {
 		cmd := <-sm.cmdCh
 		switch cmd.cmd {
-		case cmdOn:
-			args := cmd.args.(*onArgs)
-			sm.handlers[args.s][args.t] = args.h
-		case cmdIsHandlerAssigned:
-			args := cmd.args.(*isHandlerAssignedArgs)
-			args.ch <- (sm.handlers[args.s][args.t] != nil)
-			close(args.ch)
-		case cmdOff:
-			args := cmd.args.(*offArgs)
-			sm.handlers[args.s][args.t] = nil
 		case cmdEmit:
 			args := cmd.args.(*emitArgs)
 			handler := sm.handlers[sm.state][args.e.Type]
@@ -282,6 +272,16 @@ func (sm *StateMachine) loop() {
 			if args.ch != nil {
 				close(args.ch)
 			}
+		case cmdOn:
+			args := cmd.args.(*onArgs)
+			sm.handlers[args.s][args.t] = args.h
+		case cmdOff:
+			args := cmd.args.(*offArgs)
+			sm.handlers[args.s][args.t] = nil
+		case cmdIsHandlerAssigned:
+			args := cmd.args.(*isHandlerAssignedArgs)
+			args.ch <- (sm.handlers[args.s][args.t] != nil)
+			close(args.ch)
 		case cmdTerminate:
 			close(sm.terminatedCh)
 			return
