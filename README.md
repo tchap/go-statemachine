@@ -2,7 +2,11 @@
 
 [![Build Status](https://travis-ci.org/tchap/go-statemachine.png?branch=master)](https://travis-ci.org/tchap/go-statemachine)
 
-A small framework for using state machine approach for event processing.
+Transform your Go structs into tiny state machines.
+
+## About
+
+In Go you quite often need to make your struct methods thread-safe and also allow only particular sequences of calls, e.g. when `Close` is called, no other method can be called ever again. And this is exactly what go-statemachine is handling for your. If does not use any mutexes, just channels. I might not be as fast as mutexes, but it's nice and robust.
 
 ## State of the Project
 
