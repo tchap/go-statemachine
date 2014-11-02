@@ -23,6 +23,7 @@ package statemachine
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 )
@@ -33,6 +34,13 @@ const (
 	stateStopped State = iota
 	stateRunning
 	stateClosed
+)
+
+var (
+	run  = &Event{cmdRun, nil}
+	stop = &Event{cmdStop, nil}
+	cls  = &Event{cmdClose, nil}
+	sm   *StateMachine
 )
 
 func stateToString(s State) string {
@@ -66,6 +74,9 @@ func (ctx *Context) handleRun(s State, e *Event) (next State) {
 	fmt.Printf("Event number %d received\n", ctx.seq)
 
 	fmt.Printf("%s -> %s by %s\n", stateToString(s), stateToString(stateRunning), cmdToString(e.Type))
+	fmt.Fprintln(os.Stderr, "before emit")
+	sm.Emit(stop)
+	fmt.Fprintln(os.Stderr, "after emit")
 	return stateRunning
 }
 
@@ -87,7 +98,7 @@ func (ctx *Context) handleClose(s State, e *Event) (next State) {
 
 func ExampleStateMachine() {
 	// Allocate space for 3 states, 3 commands and 10 requests in the channel.
-	sm := New(stateStopped, 3, 3)
+	sm = New(stateStopped, 3, 3)
 
 	// Allocate a new Context which is going to keep our data between
 	// the handler calls.
@@ -109,12 +120,6 @@ func ExampleStateMachine() {
 		stateStopped,
 		stateRunning,
 	}, ctx.handleClose)
-
-	var (
-		run  = &Event{cmdRun, nil}
-		stop = &Event{cmdStop, nil}
-		cls  = &Event{cmdClose, nil}
-	)
 
 	sm.Emit(run)
 	sm.Emit(stop)
